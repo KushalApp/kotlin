@@ -20,7 +20,7 @@ sealed class TowerGroupKind(val index: Byte) : Comparable<TowerGroupKind> {
         }
 
         override fun hashCode(): Int {
-            return 31 * depth + index.toInt()
+            return 31 * depth + index
         }
     }
 
@@ -67,6 +67,7 @@ sealed class TowerGroupKind(val index: Byte) : Comparable<TowerGroupKind> {
 class TowerGroup
 private constructor(
     private val code: Long,
+    private val debugKinds: Array<TowerGroupKind>,
     private val invokeResolvePriority: InvokeResolvePriority = InvokeResolvePriority.NONE
 ) : Comparable<TowerGroup> {
     companion object {
@@ -79,8 +80,34 @@ private constructor(
         private const val TOTAL_BITS = 64
         private val USABLE_BITS = java.lang.Long.numberOfLeadingZeros(USED_BITS_MASK)
 
+        private val EMPTY_KIND_ARRAY = emptyArray<TowerGroupKind>()
+        private val DEBUG = true
+        private fun appendDebugKind(kinds: Array<TowerGroupKind>, kind: TowerGroupKind): Array<TowerGroupKind> {
+            return if (DEBUG) {
+                kinds + kind
+            } else {
+                EMPTY_KIND_ARRAY
+            }
+        }
 
-        private fun subscript(code: Long, kind: TowerGroupKind): TowerGroup {
+        private fun debugKindArrayOf(kind: TowerGroupKind): Array<TowerGroupKind> {
+            return if (DEBUG) {
+                arrayOf(kind)
+            } else {
+                EMPTY_KIND_ARRAY
+            }
+        }
+
+        /*
+            KKKK.....UUUUUU
+            KKKKDDDDDDDDDD.....UUUUUU
+            KKKK....000100
+            KKKKKKKK....001000
+
+            Start.Start > Start
+            00000000...001000 > 0000...000100
+         */
+        private fun subscript(code: Long, kind: TowerGroupKind): Long {
             val usedBits = (code and USED_BITS_MASK).toInt()
             return when (kind) {
                 is TowerGroupKind.WithDepth -> {
@@ -92,28 +119,25 @@ private constructor(
                     require(depthUsedBits <= USABLE_BITS) {
                         "BitGroup overflow: newUsedBits: $depthUsedBits, original: ${code.toULong().toString(2)}, usedBits: $usedBits"
                     }
-                    TowerGroup(
-                        code or kind.index.toLong().shl(TOTAL_BITS - kindUsedBits)
-                                or kind.depth.toLong().shl(TOTAL_BITS - depthUsedBits)
-                                or depthUsedBits.toLong()
-                    )
+
+                    (code or kind.index.toLong().shl(TOTAL_BITS - kindUsedBits)
+                            or kind.depth.toLong().shl(TOTAL_BITS - depthUsedBits)
+                            or depthUsedBits.toLong())
                 }
                 else -> {
                     val usesBits = usedBits + KIND_SIZE_BITS
 
                     require(usesBits <= USABLE_BITS)
-                    TowerGroup(
-                        code or kind.index.toLong().shl(TOTAL_BITS - usesBits) or usesBits.toLong()
-                    )
+                    code or kind.index.toLong().shl(TOTAL_BITS - usesBits) or usesBits.toLong()
                 }
             }
         }
 
         private fun kindOf(kind: TowerGroupKind): TowerGroup {
-            return subscript(0, kind)
+            return TowerGroup(subscript(0, kind), debugKindArrayOf(kind))
         }
 
-        val EmptyRoot = TowerGroup(0)
+        val EmptyRoot = TowerGroup(0, EMPTY_KIND_ARRAY)
 
         val Start = kindOf(TowerGroupKind.Start)
 
@@ -137,7 +161,7 @@ private constructor(
         val Last = kindOf(TowerGroupKind.Last)
     }
 
-    private fun kindOf(kind: TowerGroupKind): TowerGroup = subscript(code, kind)
+    private fun kindOf(kind: TowerGroupKind): TowerGroup = TowerGroup(subscript(code, kind), appendDebugKind(debugKinds, kind))
 
     val Member get() = kindOf(TowerGroupKind.Member)
 
@@ -155,13 +179,33 @@ private constructor(
     // It could be implemented via another TowerGroupKind, but it's not clear what priority should be assigned to the new TowerGroupKind
     fun InvokeResolvePriority(invokeResolvePriority: InvokeResolvePriority): TowerGroup {
         if (invokeResolvePriority == InvokeResolvePriority.NONE) return this
-        return TowerGroup(code, invokeResolvePriority)
+        return TowerGroup(code, debugKinds, invokeResolvePriority)
     }
 
-    override fun compareTo(other: TowerGroup): Int {
-        val result = java.lang.Long.compareUnsigned(code, other.code)
-        if (result != 0) return result
+    private fun debugCompareTo(other: TowerGroup): Int {
+        var index = 0
+        while (index < debugKinds.size) {
+            if (index >= other.debugKinds.size) return 1
+            when {
+                debugKinds[index] < other.debugKinds[index] -> return -1
+                debugKinds[index] > other.debugKinds[index] -> return 1
+            }
+            index++
+        }
+        if (index < other.debugKinds.size) return -1
+
         return invokeResolvePriority.compareTo(other.invokeResolvePriority)
+    }
+
+    override fun compareTo(other: TowerGroup): Int = run {
+        val result = java.lang.Long.compareUnsigned(code, other.code)
+        if (result != 0) return@run result
+        return@run invokeResolvePriority.compareTo(other.invokeResolvePriority)
+    }.also {
+        if (DEBUG) {
+            val debugResult = debugCompareTo(other)
+            require(debugResult == it) { "Kind comparison incorrect: $this vs $other, expected: $it, $debugResult" }
+        }
     }
 
     override fun equals(other: Any?): Boolean {
@@ -171,13 +215,15 @@ private constructor(
         other as TowerGroup
 
         if (code != other.code) return false
+        if (DEBUG && !this.debugKinds.contentEquals(other.debugKinds))
+            error("Equals fail: $this vs $other")
         if (invokeResolvePriority != other.invokeResolvePriority) return false
 
         return true
     }
 
     override fun toString(): String {
-        return "TowerGroup(code=${code.toString(2)}, invokeResolvePriority=$invokeResolvePriority)"
+        return "TowerGroup(code=${code.toString(2)}, debugKinds=${debugKinds.contentToString()}, invokeResolvePriority=$invokeResolvePriority)"
     }
 
     override fun hashCode(): Int {
