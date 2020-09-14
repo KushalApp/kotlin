@@ -81,7 +81,9 @@ private constructor(
         private val USABLE_BITS = java.lang.Long.numberOfLeadingZeros(USED_BITS_MASK)
 
         private val EMPTY_KIND_ARRAY = emptyArray<TowerGroupKind>()
-        private val DEBUG = true
+
+        private const val DEBUG = false // enables tower group debugging
+
         private fun appendDebugKind(kinds: Array<TowerGroupKind>, kind: TowerGroupKind): Array<TowerGroupKind> {
             return if (DEBUG) {
                 kinds + kind
