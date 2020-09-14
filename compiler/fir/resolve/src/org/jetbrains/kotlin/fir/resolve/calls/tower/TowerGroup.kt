@@ -5,6 +5,8 @@
 
 package org.jetbrains.kotlin.fir.resolve.calls.tower
 
+import java.lang.Long.toBinaryString
+
 sealed class TowerGroupKind(val index: Byte) : Comparable<TowerGroupKind> {
     abstract class WithDepth(index: Byte, val depth: Int) : TowerGroupKind(index) {
         override fun equals(other: Any?): Boolean {
@@ -230,7 +232,7 @@ private constructor(
     }
 
     override fun toString(): String {
-        return "TowerGroup(code=${code.toString(2)}, debugKinds=${debugKinds.contentToString()}, invokeResolvePriority=$invokeResolvePriority)"
+        return "TowerGroup(code=${toBinaryString(code)}, debugKinds=${debugKinds.contentToString()}, invokeResolvePriority=$invokeResolvePriority)"
     }
 
     override fun hashCode(): Int {
