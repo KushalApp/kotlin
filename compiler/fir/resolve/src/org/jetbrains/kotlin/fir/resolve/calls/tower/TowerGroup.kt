@@ -101,8 +101,13 @@ private constructor(
         }
 
         /*
-            KKKK.....UUUUUU
-            KKKKDDDDDDDDDD.....UUUUUU
+            K - bits of index
+            D - bits of depth
+            U - bits of used bits count
+            TowerGroupKind(K): KKKK.....UUUUUU
+            WithDepth(K, D):   KKKKDDDDDDDDDD.....UUUUUU
+
+            Subscript operation:
             KKKK....000100
             KKKKKKKK....001000
 
